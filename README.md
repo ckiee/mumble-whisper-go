@@ -11,6 +11,8 @@
 
 ## get started
 
+**Warning:** this thing is quite unoptimized and will murder your credits even when you aren't speaking! it starts a new transcription sesion for every speaker!
+
 ``` shellsession
 # (Generate cert)
 $ openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes
