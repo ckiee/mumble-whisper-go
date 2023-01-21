@@ -187,8 +187,12 @@ func (al TranscriptAudioListener) audioTranscriptConsumer(client *gumble.Client,
 				log.Fatal(err)
 			}
 			transcript := jsonParsed.Path("channel.alternatives.0.transcript").String()
-			log.Printf("recv [transcript]: %s\n", transcript)
-			client.Self.Channel.Send(fmt.Sprintf("[%s] %s", speakerName, transcript), false)
+			if len(transcript) > 0 {
+				log.Printf("recv [transcript]: %s\n", transcript)
+				client.Self.Channel.Send(fmt.Sprintf("[%s] %s", speakerName, transcript), false)
+			} else {
+				log.Println("recv: not sending because transcript is empty")
+			}
 		}
 	}()
 
