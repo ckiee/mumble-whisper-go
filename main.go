@@ -25,7 +25,7 @@ func (al WhisperAudioListener) OnAudioStream(e *gumble.AudioStreamEvent) {
 	go func() {
 		var samples []float32
 		whisperCh := make(chan []float32, 0)
-		go al.audioWhisperConsumer(e.Client, whisperCh)
+		go al.audioWhisperConsumer(e.Client, whisperCh, e.User.Name)
 		last := time.Now()
 		drop := 0
 		for {
@@ -41,9 +41,9 @@ func (al WhisperAudioListener) OnAudioStream(e *gumble.AudioStreamEvent) {
 					s /= 3.0
 					samples = append(samples, s)
 				}
-				frameSize := 4
+				frameSize := 3
 				if len(samples) > 16000*frameSize {
-					fmt.Printf("got %d000ms frame in %s ms\n", frameSize, time.Now().Sub(last).Milliseconds())
+					fmt.Printf("got %d000ms frame in %d ms\n", frameSize, time.Now().Sub(last).Milliseconds())
 					if drop == 0 {
 						whisperCh <- samples
 					} else {
@@ -67,7 +67,7 @@ func (al WhisperAudioListener) OnAudioStream(e *gumble.AudioStreamEvent) {
 	}()
 }
 
-func (al WhisperAudioListener) audioWhisperConsumer(client *gumble.Client, c chan []float32) {
+func (al WhisperAudioListener) audioWhisperConsumer(client *gumble.Client, c chan []float32, username string) {
 	model, err := whisper.New(al.modelFile)
 	if err != nil {
 		panic(err)
@@ -82,15 +82,16 @@ func (al WhisperAudioListener) audioWhisperConsumer(client *gumble.Client, c cha
 		if err = context.Process(frame, nil); err != nil {
 			fmt.Fprintf(os.Stderr, "!\ncontext.Process: %s\n", err)
 		}
-		fmt.Printf("context.Process: done [%s ms]\n", time.Now().Sub(start).Milliseconds())
+		whisperMs := time.Now().Sub(start).Milliseconds()
+		fmt.Printf("context.Process: done [%s ms]\n", whisperMs)
 		for {
 			segment, err := context.NextSegment()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "context.NextSegment: %s\n", err)
 				break
 			}
-			caption := fmt.Sprintf("[%6s->%6s] %s\n", segment.Start, segment.End, segment.Text)
-			client.Self.Channel.Send(segment.Text, false)
+			caption := fmt.Sprintf("[%6s->%6s %s; w%d ms] %s\n", segment.Start, segment.End, username, whisperMs, segment.Text)
+			client.Self.Channel.Send(caption, false)
 			fmt.Println(caption)
 		}
 	}
@@ -163,7 +164,7 @@ func main() {
 			var ch *gumble.Channel
 			for _, che := range cl.Channels {
 				fmt.Printf("ID:%d Name:%s ()\n", che.ID, che.Name)
-				if che.ID == 19 {
+				if che.ID == 8 {
 					ch = che
 				}
 			}
