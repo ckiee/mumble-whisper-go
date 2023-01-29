@@ -76,7 +76,7 @@ func main() {
 			var ch *gumble.Channel
 			for _, che := range cl.Channels {
 				fmt.Printf("ID:%d Name:%s ()\n", che.ID, che.Name)
-				if che.ID == 8 {
+				if che.ID == 1 {
 					ch = che
 				}
 			}
@@ -166,6 +166,7 @@ func (al TranscriptAudioListener) audioTranscriptConsumer(client *gumble.Client,
 		Channels: 1,
 		Encoding: "linear16",
 		Interim_results: true, // TODO: ask reese
+		Model: "phonecall",
 	}
 
 	dgConn, _, err := dg.LiveTranscription(options)
@@ -178,16 +179,18 @@ func (al TranscriptAudioListener) audioTranscriptConsumer(client *gumble.Client,
 			_, message, err := dgConn.ReadMessage()
 			if err != nil {
 				fmt.Println("ERROR reading message")
-				log.Fatal(err)
+				// log.Fatal(err)
 			}
 
 			fmt.Printf("recv [raw]: %s\n", string(message))
 			jsonParsed, jsonErr := gabs.ParseJSON(message)
 			if jsonErr != nil {
-				log.Fatal(err)
+				fmt.Println("json err");
+				// log.Fatal(err)
 			}
-			transcript := jsonParsed.Path("channel.alternatives.0.transcript").String()
-			if len(transcript) > 0 {
+			transcriptp := jsonParsed.Path("channel.alternatives.0.transcript");
+			transcript := transcriptp.String()
+			if transcriptp.Exists() && len(transcript) > 0 && transcript != "\"\"" {
 				log.Printf("recv [transcript]: %s\n", transcript)
 				client.Self.Channel.Send(fmt.Sprintf("[%s] %s", speakerName, transcript), false)
 			} else {
