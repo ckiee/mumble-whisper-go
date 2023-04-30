@@ -4,13 +4,16 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"layeh.com/gumble/gumble"
-	"layeh.com/gumble/gumbleutil"
-	_ "layeh.com/gumble/opus"
 	"log"
 	"net"
 	"os"
 	"strconv"
+	"time"
+
+	"layeh.com/gumble/gumble"
+	"layeh.com/gumble/gumbleutil"
+	_ "layeh.com/gumble/opus"
+
 	// "time"
 
 	"github.com/Jeffail/gabs/v2"
@@ -117,6 +120,7 @@ func (al TranscriptAudioListener) OnAudioStream(e *gumble.AudioStreamEvent) {
 			select {
 			case pkt := <-e.C:
 				// start := time.Now()
+				var vadAvg int16;
 				for i := 0; i < len(pkt.AudioBuffer); i += 3 /*mumble:transcript sample rate ratio*/ {
 					// fmt.Println(pkt.AudioBuffer[i])
 					var s float32 // ugch fp slow but this isnt a µC i guess.
@@ -126,6 +130,8 @@ func (al TranscriptAudioListener) OnAudioStream(e *gumble.AudioStreamEvent) {
 					s /= 3.0
 					s -= .5
 					s *= 65535.0 / 2.0
+					vadAvg /= 2;
+					vadAvg += int16(s / 2);
 					samples = append(samples, byte(int16(s)&0xff), byte(int16(s)>>8&0xff) /*little endian*/)
 				}
 				frameSize := 3200 // 5hz. to be tweaked.
@@ -157,6 +163,29 @@ func (al TranscriptAudioListener) OnAudioStream(e *gumble.AudioStreamEvent) {
 	}()
 }
 
+// https://stackoverflow.com/a/41482330
+func wsKeepAlive(c *websocket.Conn, timeout time.Duration) {
+    lastResponse := time.Now()
+    c.SetPongHandler(func(msg string) error {
+       lastResponse = time.Now()
+       return nil
+   })
+
+   go func() {
+     for {
+        err := c.WriteMessage(websocket.PingMessage, []byte("keepalive"))
+        if err != nil {
+            return
+        }
+        time.Sleep(timeout/2)
+        if(time.Since(lastResponse) > timeout) {
+            c.Close()
+            return
+        }
+    }
+  }()
+}
+
 func (al TranscriptAudioListener) audioTranscriptConsumer(client *gumble.Client, c chan []byte /*u8 pairs to make u16's*/, speakerName string) {
 	dg := *deepgram.NewClient(al.dgApiKey)
 	options := deepgram.LiveTranscriptionOptions{
@@ -165,7 +194,7 @@ func (al TranscriptAudioListener) audioTranscriptConsumer(client *gumble.Client,
 		Sample_rate: 16000,
 		Channels: 1,
 		Encoding: "linear16",
-		Interim_results: true, // TODO: ask reese
+		Interim_results: false, // reese's preference
 		Model: "phonecall",
 	}
 
@@ -178,7 +207,13 @@ func (al TranscriptAudioListener) audioTranscriptConsumer(client *gumble.Client,
 		for {
 			_, message, err := dgConn.ReadMessage()
 			if err != nil {
-				fmt.Println("ERROR reading message")
+				fmt.Println("ERROR reading message:")
+				dgConn.Close()
+				dgConn, _, err = dg.LiveTranscription(options)
+				if err != nil {
+					log.Fatal(err)
+				}
+
 				// log.Fatal(err)
 			}
 
@@ -187,11 +222,15 @@ func (al TranscriptAudioListener) audioTranscriptConsumer(client *gumble.Client,
 			if jsonErr != nil {
 				fmt.Println("json err");
 				// log.Fatal(err)
+				continue;
+			}
+			if jsonParsed.Path("transaction_key").String() == "deprecated" {
+				continue;
 			}
 			transcriptp := jsonParsed.Path("channel.alternatives.0.transcript");
 			transcript := transcriptp.String()
 			if transcriptp.Exists() && len(transcript) > 0 && transcript != "\"\"" {
-				log.Printf("recv [transcript]: %s\n", transcript)
+				log.Printf("recv [transcript]: %#v\n", transcript)
 				client.Self.Channel.Send(fmt.Sprintf("[%s] %s", speakerName, transcript), false)
 			} else {
 				log.Println("recv: not sending because transcript is empty")
