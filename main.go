@@ -195,7 +195,9 @@ func (al TranscriptAudioListener) audioTranscriptConsumer(client *gumble.Client,
 		Channels: 1,
 		Encoding: "linear16",
 		Interim_results: false, // reese's preference
-		Model: "phonecall",
+		Model: "voicemail",
+		Tier: "enhanced", // $$$$
+		Numerals: true,
 	}
 
 	dgConn, _, err := dg.LiveTranscription(options)
